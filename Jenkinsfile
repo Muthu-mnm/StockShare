@@ -1,15 +1,15 @@
 pipeline {
     agent any
 
-    stages{
+    stages {
         stage('Checkout') {
-            step {
+            steps {
                 checkout scm
             }
         }
 
-        stage('Install Frontend'){
-            step {
+        stage('Install Frontend') {
+            steps {
                 bat 'cd frontend && npm ci'
             }
         }
@@ -29,11 +29,11 @@ pipeline {
 
     post {
         success {
-            echo 'StockShare CI pipeline completed successfully'
+            echo 'StockShare CI pipeline completed successfully.'
         }
 
         failure {
-            echo 'StockShare CI pipeline failed'
+            echo 'StockShare CI pipeline failed.'
         }
     }
 }
