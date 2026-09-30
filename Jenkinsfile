@@ -2,12 +2,6 @@ pipeline {
     agent any
 
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
         stage('Install Frontend') {
             steps {
                 bat 'cd frontend && npm ci'
@@ -25,15 +19,21 @@ pipeline {
                 bat 'cd backend && npm ci'
             }
         }
+
+        stage('Build Docker Image') {
+            steps {
+                bat 'docker build -t stockshare-backend ./backend'
+            }
+        }
     }
 
     post {
         success {
-            echo 'StockShare CI pipeline completed successfully.'
+            echo 'StockShare CI/CD pipeline completed successfully.'
         }
 
         failure {
-            echo 'StockShare CI pipeline failed.'
+            echo 'StockShare CI/CD pipeline failed.'
         }
     }
 }
