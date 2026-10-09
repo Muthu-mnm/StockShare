@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -14,26 +15,23 @@ pipeline {
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Check Docker Compose') {
             steps {
-                bat 'docker compose build'
-            }
-        }
-
-        stage('Deploy with Docker Compose') {
-            steps {
-                bat 'docker compose up -d'
+                bat 'where docker'
+                bat 'docker --version'
+                bat 'docker compose version'
+                bat 'docker-compose --version'
             }
         }
     }
 
     post {
         success {
-            echo 'StockShare CI/CD pipeline completed successfully.'
+            echo 'Docker Compose diagnostic completed successfully.'
         }
 
         failure {
-            echo 'StockShare CI/CD pipeline failed.'
+            echo 'Docker Compose diagnostic failed. Check the Console Output.'
         }
     }
 }
