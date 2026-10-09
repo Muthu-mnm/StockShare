@@ -14,27 +14,21 @@ pipeline {
             }
         }
 
-        stage('Install Backend') {
-            steps {
-                bat 'cd backend && npm ci'
-            }
-        }
-
         stage('Build Docker Images') {
             steps {
-                bat 'docker-compose build'
+                bat '"C:/Users/MUTHUKUMAR B/AppData/Local/Programs/DockerDesktop/resources/bin/docker-compose.exe" build'
             }
         }
 
         stage('Deploy with Docker Compose') {
             steps {
-                bat 'docker-compose up -d'
+                bat '"C:/Users/MUTHUKUMAR B/AppData/Local/Programs/DockerDesktop/resources/bin/docker-compose.exe" up -d'
             }
         }
 
         stage('Verify Deployment') {
             steps {
-                bat 'docker-compose ps'
+                bat '"C:/Users/MUTHUKUMAR B/AppData/Local/Programs/DockerDesktop/resources/bin/docker-compose.exe" ps'
             }
         }
     }
