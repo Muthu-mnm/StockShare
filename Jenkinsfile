@@ -1,4 +1,3 @@
-
 pipeline {
     agent any
 
@@ -15,23 +14,38 @@ pipeline {
             }
         }
 
-        stage('Check Docker Compose') {
+        stage('Install Backend') {
             steps {
-                bat 'where docker'
-                bat 'docker --version'
-                bat 'docker compose version'
-                bat 'docker-compose --version'
+                bat 'cd backend && npm ci'
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                bat 'docker-compose build'
+            }
+        }
+
+        stage('Deploy with Docker Compose') {
+            steps {
+                bat 'docker-compose up -d'
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                bat 'docker-compose ps'
             }
         }
     }
 
     post {
         success {
-            echo 'Docker Compose diagnostic completed successfully.'
+            echo 'StockShare CI/CD pipeline completed successfully!'
         }
 
         failure {
-            echo 'Docker Compose diagnostic failed. Check the Console Output.'
+            echo 'StockShare CI/CD pipeline failed. Check the Console Output.'
         }
     }
 }
