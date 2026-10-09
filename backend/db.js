@@ -1,6 +1,14 @@
 const Database = require('better-sqlite3')
+const path = require('path')
+const fs = require('fs')
 
-const db = new Database('stockshare.db')
+const dataDir = path.join(__dirname, 'data')
+fs.mkdirSync(dataDir, { recursive: true })
+
+const dbPath = path.join(dataDir, 'stockshare.db')
+const db = new Database(dbPath)
+
+module.exports = db
 
 db.exec(`
     CREATE TABLE IF NOT EXISTS inventory (
