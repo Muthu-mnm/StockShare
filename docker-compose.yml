@@ -1,8 +1,11 @@
+
 services:
   backend:
     build: ./backend
     ports:
       - "5000:5000"
+    volumes:
+      - stockshare-data:/app/data
 
   frontend:
     build: ./frontend
@@ -10,3 +13,7 @@ services:
       - "8081:80"
     depends_on:
       - backend
+
+volumes:
+  stockshare-data:
+    name: stockshare-data
