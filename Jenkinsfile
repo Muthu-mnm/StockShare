@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -20,9 +21,15 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build Docker Images') {
             steps {
-                bat 'docker build -t stockshare-backend ./backend'
+                bat 'docker compose build'
+            }
+        }
+
+        stage('Deploy with Docker Compose') {
+            steps {
+                bat 'docker compose up -d'
             }
         }
     }
