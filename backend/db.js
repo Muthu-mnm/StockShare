@@ -2,11 +2,34 @@ const Database = require('better-sqlite3')
 const path = require('path')
 const fs = require('fs')
 
-const dataDir = path.join(__dirname, 'data')
+const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data')
 fs.mkdirSync(dataDir, { recursive: true })
 
-const dbPath = path.join(dataDir, 'stockshare.db')
+const dbPath = process.env.DB_PATH || path.join(dataDir, 'stockshare.db')
+
+// In local environments where data/stockshare.db does not exist yet,
+// reuse any existing stockshare.db in the backend folder to preserve historical data
+if (!fs.existsSync(dbPath)) {
+  const localBackup = path.join(__dirname, 'stockshare.db')
+  if (fs.existsSync(localBackup)) {
+    try {
+      fs.copyFileSync(localBackup, dbPath)
+    } catch (e) {
+      console.warn('Could not copy local stockshare.db to', dbPath, e.message)
+    }
+  }
+}
+
 const db = new Database(dbPath)
+
+db.checkHealth = function () {
+  try {
+    const row = db.prepare('SELECT 1 AS healthy').get()
+    return !!(row && row.healthy === 1)
+  } catch (err) {
+    return false
+  }
+}
 
 module.exports = db
 

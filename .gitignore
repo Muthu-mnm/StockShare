@@ -1,4 +1,10 @@
 node_modules/
 .env
+.env.local
+!.env.example
 *.db
+*.db-journal
+*.bak
 dist/
+backend/data/
+data/

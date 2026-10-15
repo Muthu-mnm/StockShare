@@ -1,135 +1,170 @@
 import { useEffect, useState } from 'react'
+import api from '../services/api'
 
 function MyRequests() {
-  const [businessName] = useState('XYZ Industries')
+  const [businessName, setBusinessName] = useState(() => {
+    return localStorage.getItem('stockshare_active_business') || 'XYZ Industries'
+  })
+  const [inputValue, setInputValue] = useState(() => {
+    return localStorage.getItem('stockshare_active_business') || 'XYZ Industries'
+  })
   const [requests, setRequests] = useState([])
   const [searched, setSearched] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
-  const findRequests = async () => {
-    try {
-      setErrorMessage('')
+  useEffect(() => {
+    let ignore = false
+    const target = businessName.trim()
+    if (!target) {
+      return
+    }
 
-      const response = await fetch(
-        `http://localhost:5000/api/requests/my?business=${encodeURIComponent(businessName)}`
-      )
+    api.getMyRequests(target)
+      .then((data) => {
+        if (!ignore) {
+          setRequests(data)
+          setSearched(true)
+          setLoading(false)
+        }
+      })
+      .catch((error) => {
+        if (!ignore) {
+          setErrorMessage(error.message || 'Unable to load requests.')
+          setRequests([])
+          setSearched(true)
+          setLoading(false)
+        }
+      })
+    return () => {
+      ignore = true
+    }
+  }, [businessName])
 
-      if (!response.ok) {
-        throw new Error('Failed to load requests')
-      }
-
-      const data = await response.json()
-
-      setRequests(data)
-      setSearched(true)
-    } catch (error) {
-      console.error('Unable to load requests:', error)
-      setErrorMessage('Unable to load your requests.')
+  const handleSearchSubmit = (e) => {
+    e.preventDefault()
+    if (inputValue.trim()) {
+      setBusinessName(inputValue.trim())
+      localStorage.setItem('stockshare_active_business', inputValue.trim())
     }
   }
 
-  useEffect(() => {
-    findRequests()
-  }, [])
+  const handleQuickSelect = (name) => {
+    setInputValue(name)
+    setBusinessName(name)
+    localStorage.setItem('stockshare_active_business', name)
+  }
 
   return (
     <section className="my-requests">
       <div className="my-requests-header">
-        <p>MY REQUESTS</p>
-
-        <h2>Requests I have sent.</h2>
+        <h2>My Requests</h2>
       </div>
 
-      <div className="current-business">
-        <span>Current Business</span>
+      {/* Concise Business Selector */}
+      <div className="business-selector-box">
+        <form className="business-input-form" onSubmit={handleSearchSubmit}>
+          <div className="input-with-button">
+            <input
+              type="text"
+              placeholder="Filter by business name..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              disabled={loading}
+            />
+            <button
+              type="submit"
+              className="search-business-btn"
+              disabled={loading || !inputValue.trim()}
+            >
+              Filter
+            </button>
+          </div>
+        </form>
 
-        <strong>{businessName}</strong>
+        <div className="quick-select-pills">
+          {['XYZ Industries', 'ABC Manufacturing', 'Chennai Industrial Supplies', 'Test Buyer Ltd'].map(
+            (sample) => (
+              <button
+                type="button"
+                key={sample}
+                className={`pill-btn ${businessName === sample ? 'selected' : ''}`}
+                onClick={() => handleQuickSelect(sample)}
+              >
+                {sample}
+              </button>
+            )
+          )}
+        </div>
+      </div>
+
+      <div className="current-business-banner">
+        <span>Business: <strong>{businessName}</strong></span>
       </div>
 
       {errorMessage && (
         <div className="my-request-error">
-          <div>
-            <strong>Request Error</strong>
-
-            <p>{errorMessage}</p>
-          </div>
-
-          <button
-            onClick={() => setErrorMessage('')}
-          >
-            ×
-          </button>
+          <span>{errorMessage}</span>
+          <button onClick={() => setErrorMessage('')}>×</button>
         </div>
       )}
 
-      <div className="my-requests-list">
-        {!searched ? (
-          <div className="no-requests">
-            <h3>Loading requests...</h3>
-
-            <p>
-              Please wait while your requests are loaded.
-            </p>
-          </div>
-        ) : requests.length === 0 ? (
-          <div className="no-requests">
-            <h3>No requests found</h3>
-
-            <p>
-              You have not submitted any inventory requests yet.
-            </p>
-          </div>
-        ) : (
-          requests.map((request) => (
-            <div
-              className="my-request-card"
-              key={request.id}
-            >
-              <div className="my-request-header">
-                <div>
-                  <span>MY REQUEST</span>
-
-                  <h3>{request.inventory_name}</h3>
-                </div>
-
-                <span
-                  className={`request-status ${request.status.toLowerCase()}`}
-                >
-                  {request.status}
-                </span>
-              </div>
-
-              <div className="request-details">
-                <div>
-                  <strong>Requested From</strong>
-
-                  <p>{request.owner_business}</p>
-                </div>
-
-                <div>
-                  <strong>Quantity</strong>
-
-                  <p>{request.quantity} units</p>
-                </div>
-
-                <div>
-                  <strong>Requested On</strong>
-
-                  <p>{request.created_at}</p>
-                </div>
-              </div>
-
-              <div className="request-message">
-                <strong>Message</strong>
-
-                <p>
-                  {request.message || 'No message provided.'}
-                </p>
-              </div>
+      {loading ? (
+        <div className="requests-loading-state">
+          <div className="skeleton-card"></div>
+          <div className="skeleton-card"></div>
+        </div>
+      ) : (
+        <div className="my-requests-list">
+          {!searched ? (
+            <div className="no-requests">
+              <p>Loading requests...</p>
             </div>
-          ))
-        )}
-      </div>
+          ) : requests.length === 0 ? (
+            <div className="no-requests full-width">
+              <h3>No requests found for &quot;{businessName}&quot;</h3>
+            </div>
+          ) : (
+            requests.map((request) => (
+              <div className="my-request-card" key={request.id}>
+                <div className="my-request-header">
+                  <div>
+                    <span className="card-id-tag">#{request.id}</span>
+                    <h3>{request.inventory_name}</h3>
+                  </div>
+
+                  <span className={`request-status ${request.status.toLowerCase()}`}>
+                    {request.status}
+                  </span>
+                </div>
+
+                <div className="request-details">
+                  <div>
+                    <strong>Owner</strong>
+                    <p>{request.owner_business || '—'}</p>
+                  </div>
+
+                  <div>
+                    <strong>Units</strong>
+                    <p className="units-count">{request.quantity}</p>
+                  </div>
+
+                  <div>
+                    <strong>Date</strong>
+                    <p>{request.created_at ? request.created_at.slice(0, 16) : '—'}</p>
+                  </div>
+                </div>
+
+                {request.message && (
+                  <div className="request-message">
+                    <p>{request.message}</p>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </section>
   )
 }

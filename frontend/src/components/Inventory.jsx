@@ -1,34 +1,94 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
+import api from '../services/api'
 import AddInventory from './AddInventory'
 
 function Inventory() {
   const [inventoryData, setInventoryData] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState('')
+
+  // Search & Filter State
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('ALL')
+  const [selectedStatus, setSelectedStatus] = useState('ALL')
+
+  // Modal State
   const [selectedItem, setSelectedItem] = useState(null)
   const [activeModal, setActiveModal] = useState(null)
 
+  // Request State
   const [requestQuantity, setRequestQuantity] = useState('')
   const [requestMessage, setRequestMessage] = useState('')
   const [requesterBusiness, setRequesterBusiness] = useState('')
   const [requestSubmitted, setRequestSubmitted] = useState(false)
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false)
   const [alertMessage, setAlertMessage] = useState('')
 
+  // Update State
   const [updateQuantity, setUpdateQuantity] = useState('')
   const [updateMessage, setUpdateMessage] = useState('')
+  const [isUpdating, setIsUpdating] = useState(false)
 
-  const fetchInventory = () => {
-    fetch('http://localhost:5000/api/inventory')
-      .then((response) => response.json())
-      .then((data) => {
-        setInventoryData(data)
-      })
-      .catch(() => {
-        console.error('Unable to load inventory')
-      })
+  // Delete State
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const fetchInventory = async () => {
+    setLoading(true)
+    setFetchError('')
+    try {
+      const data = await api.getInventory()
+      setInventoryData(data)
+    } catch (err) {
+      setFetchError(err.message || 'Unable to connect to server')
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
-    fetchInventory()
+    let ignore = false
+    api.getInventory()
+      .then((data) => {
+        if (!ignore) {
+          setInventoryData(data)
+          setLoading(false)
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          setFetchError(err.message || 'Unable to connect to server')
+          setLoading(false)
+        }
+      })
+    return () => {
+      ignore = true
+    }
   }, [])
+
+  const categories = useMemo(() => {
+    const set = new Set(inventoryData.map((item) => item.category).filter(Boolean))
+    return Array.from(set).sort()
+  }, [inventoryData])
+
+  const filteredInventory = useMemo(() => {
+    return inventoryData.filter((item) => {
+      const matchesSearch =
+        !searchTerm.trim() ||
+        (item.name && item.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.business && item.business.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.location && item.location.toLowerCase().includes(searchTerm.toLowerCase()))
+
+      const matchesCategory =
+        selectedCategory === 'ALL' || item.category === selectedCategory
+
+      const matchesStatus =
+        selectedStatus === 'ALL' ||
+        (selectedStatus === 'Available' && item.quantity > 0 && item.status !== 'Unavailable') ||
+        (selectedStatus === 'Unavailable' && (item.quantity === 0 || item.status === 'Unavailable'))
+
+      return matchesSearch && matchesCategory && matchesStatus
+    })
+  }, [inventoryData, searchTerm, selectedCategory, selectedStatus])
 
   const openModal = (item, modalType) => {
     setSelectedItem(item)
@@ -44,207 +104,268 @@ function Inventory() {
   const closeModal = () => {
     setSelectedItem(null)
     setActiveModal(null)
-
     setRequestQuantity('')
     setRequestMessage('')
     setRequesterBusiness('')
     setRequestSubmitted(false)
     setAlertMessage('')
-
     setUpdateQuantity('')
     setUpdateMessage('')
+    setIsSubmittingRequest(false)
+    setIsUpdating(false)
+    setIsDeleting(false)
   }
 
   const submitRequest = async () => {
     const quantity = Number(requestQuantity)
 
-    if (!requestQuantity || quantity <= 0) {
-      setAlertMessage('Please enter a valid quantity.')
+    if (!requesterBusiness.trim()) {
+      setAlertMessage('Enter your business name.')
+      return
+    }
+
+    if (!requestQuantity || isNaN(quantity) || quantity <= 0) {
+      setAlertMessage('Enter a valid quantity.')
       return
     }
 
     if (quantity > selectedItem.quantity) {
-      setAlertMessage(
-        `Only ${selectedItem.quantity} units are available.`
-      )
+      setAlertMessage(`Max available: ${selectedItem.quantity} units.`)
       return
     }
 
-    if (!requestMessage.trim()) {
-      setAlertMessage('Please enter a message.')
-      return
-    }
-
-    if(!requesterBusiness.trim()){
-      setAlertMessage('Please enter your business name.')
-      return
-    }
+    setIsSubmittingRequest(true)
     try {
-      const response = await fetch(
-        'http://localhost:5000/api/requests',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            inventory_id: selectedItem.id,
-            requester_business: requesterBusiness,
-            quantity: quantity,
-            message: requestMessage,
-          }),
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        setAlertMessage(
-          data.message || 'Failed to submit request.'
-        )
-        return
-      }
+      await api.createRequest({
+        inventory_id: selectedItem.id,
+        requester_business: requesterBusiness.trim(),
+        quantity: quantity,
+        message: requestMessage.trim(),
+      })
 
       setRequestSubmitted(true)
     } catch (error) {
-      setAlertMessage('Unable to connect to server.')
+      setAlertMessage(error.message || 'Request failed.')
+    } finally {
+      setIsSubmittingRequest(false)
     }
   }
 
   const updateInventory = async () => {
     const quantity = Number(updateQuantity)
 
-    if (updateQuantity === '' || quantity < 0) {
-      setUpdateMessage('Please enter a valid quantity.')
+    if (updateQuantity === '' || isNaN(quantity) || quantity < 0) {
+      setUpdateMessage('Enter a valid quantity.')
       return
     }
 
+    setIsUpdating(true)
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/inventory/${selectedItem.id}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            quantity: quantity,
-          }),
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        setUpdateMessage(
-          data.message || 'Failed to update inventory.'
-        )
-        return
-      }
-
+      await api.updateInventoryQuantity(selectedItem.id, quantity)
       closeModal()
       fetchInventory()
     } catch (error) {
-      setUpdateMessage('Unable to connect to server.')
+      setUpdateMessage(error.message || 'Update failed.')
+    } finally {
+      setIsUpdating(false)
     }
   }
 
   const deleteInventory = async () => {
+    setIsDeleting(true)
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/inventory/${selectedItem.id}`,
-        {
-          method: 'DELETE',
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        setAlertMessage(
-          data.message || 'Failed to delete inventory.'
-        )
-        return
-      }
-
+      await api.deleteInventory(selectedItem.id)
       closeModal()
       fetchInventory()
     } catch (error) {
-      setAlertMessage('Unable to connect to server.')
+      setAlertMessage(error.message || 'Delete failed.')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
   return (
     <section className="inventory" id="inventory">
       <div className="inventory-header">
-        <p>AVAILABLE INVENTORY</p>
-
-        <h2>Find what your business needs.</h2>
+        <h2>Inventory</h2>
       </div>
 
-      <AddInventory onInventoryAdded={fetchInventory} />
-
-      <div className="inventory-grid">
-        {inventoryData.map((item) => (
-          <div className="inventory-card" key={item.id}>
-
-            <button 
-              className="delete-icon-button"
-              onClick={() => openModal(item, 'delete')}
-              title="Delete Inventory"
-            >🗑</button>
-            <span>{item.category}</span>
-
-            <h3>{item.name}</h3>
-
-            <p>Quantity: {item.quantity}</p>
-
-            <p>Location: {item.location}</p>
-
-            <div className="inventory-actions">
+      <div className="inventory-controls-container">
+        <div className="inventory-filter-bar">
+          <div className="search-box">
+            <input
+              type="text"
+              placeholder="Search items, business, location..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
               <button
-                onClick={() => openModal(item, 'details')}
+                className="clear-search-btn"
+                onClick={() => setSearchTerm('')}
               >
-                View Details
+                ×
               </button>
+            )}
+          </div>
 
-              <button
-                onClick={() => openModal(item, 'request')}
+          <div className="filter-dropdowns">
+            <div className="select-wrapper">
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
               >
-                Request Inventory
-              </button>
+                <option value="ALL">All Categories</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <button
-              className="update-inventory-button"
-              onClick={() => openModal(item, 'update')}
-            >
-              Update Quantity
-            </button>
-
+            <div className="select-wrapper">
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+              >
+                <option value="ALL">All Status</option>
+                <option value="Available">Available</option>
+                <option value="Unavailable">Unavailable</option>
+              </select>
+            </div>
           </div>
-        ))}
+        </div>
+
+        <AddInventory onInventoryAdded={fetchInventory} />
       </div>
 
-      {/* DETAILS POPUP */}
+      {fetchError && (
+        <div className="inventory-error-banner">
+          <span>{fetchError}</span>
+          <button onClick={fetchInventory} className="retry-btn">
+            Retry
+          </button>
+        </div>
+      )}
 
-      {activeModal === 'details' && selectedItem && (
-        <div className="modal-overlay">
-          <div className="inventory-modal">
+      {loading ? (
+        <div className="inventory-loading-grid">
+          <div className="skeleton-card"></div>
+          <div className="skeleton-card"></div>
+          <div className="skeleton-card"></div>
+          <div className="skeleton-card"></div>
+        </div>
+      ) : filteredInventory.length === 0 ? (
+        <div className="empty-inventory-state">
+          <h3>No items found</h3>
+          {(searchTerm || selectedCategory !== 'ALL' || selectedStatus !== 'ALL') && (
             <button
-              className="modal-close"
-              onClick={closeModal}
+              className="clear-filters-btn"
+              onClick={() => {
+                setSearchTerm('')
+                setSelectedCategory('ALL')
+                setSelectedStatus('ALL')
+              }}
             >
+              Reset Filters
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="inventory-grid">
+          {filteredInventory.map((item) => {
+            const isOutOfStock = item.quantity === 0 || item.status === 'Unavailable'
+            return (
+              <div
+                className={`inventory-card ${isOutOfStock ? 'out-of-stock' : ''}`}
+                key={item.id}
+              >
+                <div className="card-top-row">
+                  <span className="category-tag">{item.category}</span>
+                  <button
+                    className="delete-icon-button"
+                    onClick={() => openModal(item, 'delete')}
+                    title="Delete"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <h3>{item.name}</h3>
+
+                <div className="card-meta">
+                  <div className="meta-row">
+                    <span className="meta-label">Quantity</span>
+                    <strong className={isOutOfStock ? 'qty-zero' : 'qty-available'}>
+                      {item.quantity} units
+                    </strong>
+                  </div>
+                  <div className="meta-row">
+                    <span className="meta-label">Location</span>
+                    <span>{item.location}</span>
+                  </div>
+                  <div className="meta-row">
+                    <span className="meta-label">Business</span>
+                    <span className="business-tag">{item.business}</span>
+                  </div>
+                </div>
+
+                <div className="stock-status-badge">
+                  <span
+                    className={`status-indicator ${
+                      isOutOfStock ? 'status-unavailable' : 'status-available'
+                    }`}
+                  ></span>
+                  {isOutOfStock ? 'Unavailable' : 'Available'}
+                </div>
+
+                <div className="inventory-actions">
+                  <button
+                    className="details-btn"
+                    onClick={() => openModal(item, 'details')}
+                  >
+                    Details
+                  </button>
+
+                  <button
+                    className="request-btn"
+                    disabled={isOutOfStock}
+                    onClick={() => openModal(item, 'request')}
+                  >
+                    Request
+                  </button>
+                </div>
+
+                <button
+                  className="update-inventory-button"
+                  onClick={() => openModal(item, 'update')}
+                >
+                  Edit
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* DETAILS MODAL */}
+      {activeModal === 'details' && selectedItem && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div
+            className="inventory-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button className="modal-close" onClick={closeModal}>
               ×
             </button>
 
-            <span>{selectedItem.category}</span>
-
+            <span className="modal-category">{selectedItem.category}</span>
             <h3>{selectedItem.name}</h3>
 
             <div className="inventory-info">
               <div>
-                <strong>Available Quantity</strong>
+                <strong>Quantity</strong>
                 <p>{selectedItem.quantity} units</p>
               </div>
 
@@ -255,7 +376,7 @@ function Inventory() {
 
               <div>
                 <strong>Status</strong>
-                <p>{selectedItem.status}</p>
+                <p>{selectedItem.quantity === 0 ? 'Unavailable' : selectedItem.status}</p>
               </div>
 
               <div>
@@ -264,102 +385,99 @@ function Inventory() {
               </div>
             </div>
 
-            <div className="inventory-description">
-              <strong>Description</strong>
+            {selectedItem.description && (
+              <div className="inventory-description">
+                <strong>Description</strong>
+                <p>{selectedItem.description}</p>
+              </div>
+            )}
 
-              <p>{selectedItem.description}</p>
+            <div className="modal-footer-actions">
+              <button
+                className="modal-action-btn"
+                disabled={selectedItem.quantity === 0}
+                onClick={() => openModal(selectedItem, 'request')}
+              >
+                {selectedItem.quantity === 0 ? 'Out of Stock' : 'Request Item'}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* REQUEST POPUP */}
-
+      {/* REQUEST MODAL */}
       {activeModal === 'request' && selectedItem && (
-        <div className="modal-overlay">
-          <div className="inventory-modal">
-            <button
-              className="modal-close"
-              onClick={closeModal}
-            >
+        <div className="modal-overlay" onClick={closeModal}>
+          <div
+            className="inventory-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button className="modal-close" onClick={closeModal}>
               ×
             </button>
 
-            <span>REQUEST INVENTORY</span>
-
+            <span className="modal-category">REQUEST</span>
             <h3>{selectedItem.name}</h3>
 
-            <p>
-              Available Quantity: {selectedItem.quantity} units
+            <p className="available-hint">
+              {selectedItem.quantity} units available
             </p>
 
             {alertMessage && (
               <div className="custom-alert">
-                <div>
-                  <strong>Invalid Request</strong>
-                  <p>{alertMessage}</p>
-                </div>
-
-                <button
-                  onClick={() => setAlertMessage('')}
-                >
-                  ×
-                </button>
+                <span>{alertMessage}</span>
+                <button onClick={() => setAlertMessage('')}>×</button>
               </div>
             )}
 
             {!requestSubmitted ? (
               <div className="request-form">
-
                 <label>Business Name</label>
-                <input 
+                <input
                   type="text"
-                  placeholder="Enter your business name"
+                  placeholder="Your business name"
                   value={requesterBusiness}
-                  onChange={(e) =>
-                    setRequesterBusiness(e.target.value)
-                  }
+                  onChange={(e) => setRequesterBusiness(e.target.value)}
+                  disabled={isSubmittingRequest}
+                  required
                 />
 
-                <label>Required Quantity</label>
-                
+                <label>Quantity</label>
                 <input
                   type="number"
-                  placeholder="Enter quantity"
+                  placeholder={`Max ${selectedItem.quantity}`}
+                  min="1"
+                  max={selectedItem.quantity}
                   value={requestQuantity}
-                  onChange={(e) =>
-                    setRequestQuantity(e.target.value)
-                  }
+                  onChange={(e) => setRequestQuantity(e.target.value)}
+                  disabled={isSubmittingRequest}
+                  required
                 />
 
                 <label>Message</label>
-
                 <textarea
-                  placeholder="Write a message to the inventory owner"
-                  rows="4"
+                  placeholder="Notes or timeline"
+                  rows="2"
                   value={requestMessage}
-                  onChange={(e) =>
-                    setRequestMessage(e.target.value)
-                  }
+                  onChange={(e) => setRequestMessage(e.target.value)}
+                  disabled={isSubmittingRequest}
                 ></textarea>
 
                 <button
                   className="submit-request"
                   onClick={submitRequest}
+                  disabled={isSubmittingRequest}
                 >
-                  Submit Request
+                  {isSubmittingRequest ? 'Submitting...' : 'Submit Request'}
                 </button>
               </div>
             ) : (
               <div className="request-success">
-                <h4>Request Submitted Successfully</h4>
-
+                <h4>Request Submitted</h4>
                 <p>
-                  Your request for {selectedItem.name} has
-                  been submitted.
+                  Requested {requestQuantity} units of {selectedItem.name}.
                 </p>
-
-                <button onClick={closeModal}>
+                <button onClick={closeModal} className="success-close-btn">
                   Close
                 </button>
               </div>
@@ -368,93 +486,71 @@ function Inventory() {
         </div>
       )}
 
-      {/* UPDATE QUANTITY POPUP */}
-
+      {/* UPDATE MODAL */}
       {activeModal === 'update' && selectedItem && (
-        <div className="modal-overlay">
-          <div className="inventory-modal">
-            <button
-              className="modal-close"
-              onClick={closeModal}
-            >
+        <div className="modal-overlay" onClick={closeModal}>
+          <div
+            className="inventory-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button className="modal-close" onClick={closeModal}>
               ×
             </button>
 
-            <span>UPDATE INVENTORY</span>
-
+            <span className="modal-category">UPDATE</span>
             <h3>{selectedItem.name}</h3>
 
             <div className="request-form">
-              <label>Available Quantity</label>
-
+              <label>Quantity</label>
               <input
                 type="number"
                 min="0"
                 value={updateQuantity}
-                onChange={(e) =>
-                  setUpdateQuantity(e.target.value)
-                }
+                onChange={(e) => setUpdateQuantity(e.target.value)}
+                disabled={isUpdating}
               />
 
               {updateMessage && (
                 <div className="custom-alert">
-                  <div>
-                    <strong>Update Error</strong>
-                    <p>{updateMessage}</p>
-                  </div>
-
-                  <button
-                    onClick={() => setUpdateMessage('')}
-                  >
-                    ×
-                  </button>
+                  <span>{updateMessage}</span>
+                  <button onClick={() => setUpdateMessage('')}>×</button>
                 </div>
               )}
 
               <button
                 className="submit-request"
                 onClick={updateInventory}
+                disabled={isUpdating}
               >
-                Update Quantity
+                {isUpdating ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* DELETE POPUP */}
-
+      {/* DELETE MODAL */}
       {activeModal === 'delete' && selectedItem && (
-        <div className="modal-overlay">
-          <div className="inventory-modal delete-modal">
-            <button
-              className="modal-close"
-              onClick={closeModal}
-            >
+        <div className="modal-overlay" onClick={closeModal}>
+          <div
+            className="inventory-modal delete-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button className="modal-close" onClick={closeModal}>
               ×
             </button>
 
-            <span>DELETE INVENTORY</span>
-
+            <span className="modal-category danger">CONFIRM DELETE</span>
             <h3>{selectedItem.name}</h3>
 
-            <p>
-              Are you sure you want to delete this inventory?
-              This action cannot be undone.
+            <p className="delete-warning-text">
+              Delete this inventory listing?
             </p>
 
             {alertMessage && (
               <div className="custom-alert">
-                <div>
-                  <strong>Cannot Delete</strong>
-                  <p>{alertMessage}</p>
-                </div>
-
-                <button
-                  onClick={() => setAlertMessage('')}
-                >
-                  ×
-                </button>
+                <span>{alertMessage}</span>
+                <button onClick={() => setAlertMessage('')}>×</button>
               </div>
             )}
 
@@ -462,15 +558,16 @@ function Inventory() {
               <button
                 className="cancel-delete"
                 onClick={closeModal}
+                disabled={isDeleting}
               >
                 Cancel
               </button>
-
               <button
                 className="confirm-delete"
                 onClick={deleteInventory}
+                disabled={isDeleting}
               >
-                Delete Inventory
+                {isDeleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
